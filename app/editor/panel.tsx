@@ -245,9 +245,9 @@ function PropControl({ propKey, schema, value, onChange }: {
     case 'text':
       return <TextRow label={label} value={value as string} placeholder={schema.placeholder} onChange={onChange} />;
     case 'position':
-      return <PositionRow label={label} value={value as { x: number; y: number }} onChange={onChange as any} />;
+      return <PositionRow label={label} value={value as { x: number; y: number }} onChange={onChange as (v: { x: number; y: number }) => void} />;
     case 'transform':
-      return <TransformRow value={value as { scale: number; offsetX: number; offsetY: number }} onChange={onChange as any} />;
+      return <TransformRow value={value as { scale: number; offsetX: number; offsetY: number }} onChange={onChange as (v: { scale: number; offsetX: number; offsetY: number }) => void} />;
     default:
       return null;
   }
