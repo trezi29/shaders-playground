@@ -371,6 +371,7 @@ export default function DitherImage({
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
           gl.generateMipmap(gl.TEXTURE_2D);
           bitmap.close();
+          canvas!.style.opacity = '1';
         })
         .catch(() => {
           loadedUrl = ''; // allow retry on next frame
@@ -476,7 +477,7 @@ export default function DitherImage({
     >
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: 'block' }}
+        style={{ width: '100%', height: '100%', display: 'block', opacity: 0, transition: 'opacity 0.3s ease' }}
       />
     </div>
   );
