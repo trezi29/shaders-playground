@@ -11,6 +11,8 @@ export type Layer = {
   type: string;
   visible: boolean;
   props: Record<string, PropValue>;
+  maskSource?: string;
+  maskType?: 'alpha' | 'alphaInverted' | 'luminance' | 'luminanceInverted';
 };
 
 type EditorPanelProps = {
@@ -30,6 +32,7 @@ type EditorPanelProps = {
   onSaveProject: (name: string) => void;
   onLoadProject: (project: SavedProject) => void;
   onDeleteProject: (id: string) => void;
+  onUpdateMask: (id: string, maskSource: string | undefined, maskType: Layer['maskType']) => void;
 };
 
 // ─── Label formatter ──────────────────────────────────────────────────────────
@@ -278,6 +281,52 @@ function PropList({ type, props, onPropChange }: {
   );
 }
 
+// ─── Mask Section ─────────────────────────────────────────────────────────────
+
+const MASK_TYPES: Layer['maskType'][] = ['alpha', 'alphaInverted', 'luminance', 'luminanceInverted'];
+
+function MaskSection({ layers, selected, onUpdateMask }: {
+  layers: Layer[];
+  selected: Layer;
+  onUpdateMask: (id: string, maskSource: string | undefined, maskType: Layer['maskType']) => void;
+}) {
+  const otherLayers = layers.filter(l => l.id !== selected.id);
+
+  return (
+    <div className="pt-2 border-t border-white/8">
+      <p className="text-[10px] text-white/30 uppercase tracking-widest mb-1.5">Mask</p>
+      <div className="flex items-center gap-2 py-[3px]">
+        <span className="text-[11px] text-white/40 w-[90px] shrink-0">Source</span>
+        <select
+          value={selected.maskSource ?? ''}
+          onChange={e => {
+            const src = e.target.value || undefined;
+            onUpdateMask(selected.id, src, src ? (selected.maskType ?? 'alpha') : undefined);
+          }}
+          className="flex-1 text-[11px] bg-white/8 border border-white/10 rounded px-1.5 py-0.5 text-white/70 focus:outline-none focus:border-white/30"
+        >
+          <option value="">None</option>
+          {otherLayers.map(l => (
+            <option key={l.id} value={l.id}>{REGISTRY[l.type]?.label ?? l.type}</option>
+          ))}
+        </select>
+      </div>
+      {selected.maskSource && (
+        <div className="flex items-center gap-2 py-[3px]">
+          <span className="text-[11px] text-white/40 w-[90px] shrink-0">Type</span>
+          <select
+            value={selected.maskType ?? 'alpha'}
+            onChange={e => onUpdateMask(selected.id, selected.maskSource, e.target.value as Layer['maskType'])}
+            className="flex-1 text-[11px] bg-white/8 border border-white/10 rounded px-1.5 py-0.5 text-white/70 focus:outline-none focus:border-white/30"
+          >
+            {MASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component Picker ─────────────────────────────────────────────────────────
 
 function ComponentPicker({ onPick, onClose }: {
@@ -330,8 +379,8 @@ function ComponentPicker({ onPick, onClose }: {
 
 // ─── Layer Row ────────────────────────────────────────────────────────────────
 
-function LayerRow({ layer, isSelected, isFirst, isLast, onSelect, onToggleVisible, onRemove, onMoveUp, onMoveDown }: {
-  layer: Layer; isSelected: boolean; isFirst: boolean; isLast: boolean;
+function LayerRow({ layer, isSelected, isFirst, isLast, isMaskSource, onSelect, onToggleVisible, onRemove, onMoveUp, onMoveDown }: {
+  layer: Layer; isSelected: boolean; isFirst: boolean; isLast: boolean; isMaskSource: boolean;
   onSelect: () => void; onToggleVisible: () => void; onRemove: () => void;
   onMoveUp: () => void; onMoveDown: () => void;
 }) {
@@ -344,6 +393,9 @@ function LayerRow({ layer, isSelected, isFirst, isLast, onSelect, onToggleVisibl
       }`}
     >
       <span className="flex-1 text-[11px] truncate text-white/80">{def?.label ?? layer.type}</span>
+      {isMaskSource && (
+        <span className="text-[9px] text-white/30 shrink-0" title="Used as mask">◈</span>
+      )}
       <div className="flex items-center shrink-0">
         <button
           onClick={e => { e.stopPropagation(); onToggleVisible(); }}
@@ -375,6 +427,7 @@ export function EditorPanel({
   layers, selectedId, bgColor, projectName, savedProjects,
   onAddLayer, onUpdateProp, onToggleVisible, onRemoveLayer, onReorderLayer,
   onSelectLayer, onBgColorChange, onProjectNameChange, onSaveProject, onLoadProject, onDeleteProject,
+  onUpdateMask,
 }: EditorPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -491,6 +544,7 @@ export function EditorPanel({
                       isSelected={layer.id === selectedId}
                       isFirst={i === 0}
                       isLast={i === layers.length - 1}
+                      isMaskSource={layers.some(l => l.maskSource === layer.id)}
                       onSelect={() => onSelectLayer(layer.id === selectedId ? null : layer.id)}
                       onToggleVisible={() => onToggleVisible(layer.id)}
                       onRemove={() => onRemoveLayer(layer.id)}
@@ -527,6 +581,11 @@ export function EditorPanel({
                   type={selectedLayer.type}
                   props={selectedLayer.props}
                   onPropChange={(key, value) => onUpdateProp(selectedLayer.id, key, value)}
+                />
+                <MaskSection
+                  layers={layers}
+                  selected={selectedLayer}
+                  onUpdateMask={onUpdateMask}
                 />
               </div>
             </>
