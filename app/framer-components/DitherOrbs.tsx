@@ -1,9 +1,11 @@
 /**
- * DitherGradient — standalone Framer component
+ * DitherOrbs — standalone Framer component
  *
- * Two-color vertical gradient with organic noise warp, rendered through a
- * dither filter. Zero npm dependencies — paste directly into Framer's
- * code-component editor.
+ * Multiple animated radial blobs generate a luminance field that gets
+ * rendered through a dither filter — producing organic dithered patches
+ * that move and overlap on a clean background.
+ *
+ * Zero npm dependencies — paste directly into Framer's code-component editor.
  */
 
 import { useEffect, useRef } from 'react';
@@ -22,37 +24,19 @@ precision highp float;
 
 uniform vec2  u_res;
 uniform float u_time;
-uniform vec3  u_gradA;
-uniform vec3  u_gradB;
 uniform float u_speed;
-uniform float u_distortion;
 uniform float u_seed;
-uniform int   u_pattern;    // 0=bayer2 1=bayer4 2=bayer8 3=clusteredDot 4=blueNoise 5=whiteNoise
+uniform float u_blobSize;
+uniform float u_softness;
+uniform int   u_pattern;   // 0=bayer2 1=bayer4 2=bayer8 3=clusteredDot 4=blueNoise 5=whiteNoise
 uniform float u_pixelSize;
 uniform float u_threshold;
 uniform float u_spread;
-uniform int   u_colorMode;  // 0=gradient 1=custom
 uniform vec3  u_colorA;
 uniform vec3  u_colorB;
 uniform float u_opacity;
 
 out vec4 outColor;
-
-// ── Cheap value noise (4 hash calls) ─────────────────────────────────────────
-float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(
-        mix(hash(i),                  hash(i + vec2(1.0, 0.0)), u.x),
-        mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
-        u.y
-    );
-}
 
 // ── Bayer 2×2 ─────────────────────────────────────────────────────────────────
 float bayer2(vec2 p) {
@@ -115,24 +99,47 @@ float whiteNoise(vec2 p) {
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
+// ── Blob contribution — radial falloff in pixel space ─────────────────────────
+float blob(vec2 pix, vec2 center, float inner, float outer) {
+    return 1.0 - smoothstep(inner, outer, length(pix - center));
+}
+
 void main() {
-    // ── Step 1: snap to dither-cell grid ──────────────────────────────────────
+    // ── Snap to dither-cell grid ──────────────────────────────────────────────
     vec2 pixelCoord   = floor(gl_FragCoord.xy / u_pixelSize);
     vec2 pixelatedPos = (pixelCoord + 0.5) * u_pixelSize;
 
-    // ── Step 2: screen UV (Y flipped so top=0) ────────────────────────────────
-    vec2 uv = vec2(
-        pixelatedPos.x / u_res.x,
-        1.0 - pixelatedPos.y / u_res.y
-    );
+    // ── Animate 3 blobs on independent Lissajous paths ───────────────────────
+    // Phases are 120° apart (2π/3) so they spread evenly by default.
+    float t       = u_time * u_speed * 0.15 + u_seed * 0.5;
+    float minDim  = min(u_res.x, u_res.y);
+    float outer   = u_blobSize * minDim;
+    float inner   = outer * (1.0 - clamp(u_softness, 0.0, 0.999));
+    float travel  = 0.32; // fraction of canvas each blob wanders
 
-    // ── Step 3: vertical gradient + single noise warp ─────────────────────────
-    // One noise call replaces the old 6×FBM stack (30 noise evaluations).
-    float t    = u_time * u_speed * 0.08 + u_seed * 0.17;
-    float warp = noise(vec2(uv.x * 2.5 + t * 0.3, t * 0.15)) - 0.5;
-    float gradT = clamp(uv.y + warp * u_distortion * 0.6, 0.0, 1.0);
+    vec2 b1 = vec2(
+        0.5 + sin(t * 0.71)           * travel,
+        0.5 + cos(t * 0.53)           * travel
+    ) * u_res;
 
-    // ── Step 4: dither value ──────────────────────────────────────────────────
+    vec2 b2 = vec2(
+        0.5 + cos(t * 0.47 + 2.094)   * travel,
+        0.5 + sin(t * 0.79 + 2.094)   * travel
+    ) * u_res;
+
+    vec2 b3 = vec2(
+        0.5 + sin(t * 0.31 + 4.189)   * travel,
+        0.5 + cos(t * 0.61 + 4.189)   * travel
+    ) * u_res;
+
+    // ── Sum blob luminances, clamp to [0,1] ───────────────────────────────────
+    float lum = 0.0;
+    lum += blob(pixelatedPos, b1, inner, outer);
+    lum += blob(pixelatedPos, b2, inner, outer);
+    lum += blob(pixelatedPos, b3, inner, outer);
+    lum  = clamp(lum, 0.0, 1.0);
+
+    // ── Dither value ──────────────────────────────────────────────────────────
     float ditherVal;
     if      (u_pattern == 0) ditherVal = bayer2(pixelCoord);
     else if (u_pattern == 1) ditherVal = bayer4(pixelCoord);
@@ -141,29 +148,13 @@ void main() {
     else if (u_pattern == 4) ditherVal = blueNoise(pixelCoord);
     else                     ditherVal = whiteNoise(pixelCoord);
 
-    // ── Step 5: threshold + spread ────────────────────────────────────────────
+    // ── Threshold + spread ────────────────────────────────────────────────────
     float ditherResult = step(
         0.5 + (ditherVal - 0.5) * u_spread,
-        gradT + u_threshold - 0.5
+        lum + u_threshold - 0.5
     );
 
-    // ── Step 6: color output ──────────────────────────────────────────────────
-    vec3 outRGB;
-    if (u_colorMode == 0) {
-        // gradient mode — each dithered pixel picks a slightly offset gradient stop
-        float darkT   = clamp(gradT - 0.18, 0.0, 1.0);
-        float brightT = clamp(gradT + 0.18, 0.0, 1.0);
-        outRGB = mix(
-            mix(u_gradA, u_gradB, darkT),
-            mix(u_gradA, u_gradB, brightT),
-            ditherResult
-        );
-    } else {
-        // custom mode — two solid colors
-        outRGB = mix(u_colorA, u_colorB, ditherResult);
-    }
-
-    outColor = vec4(outRGB, u_opacity);
+    outColor = vec4(mix(u_colorA, u_colorB, ditherResult), u_opacity);
 }
 `;
 
@@ -174,7 +165,7 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
   gl.shaderSource(s, src);
   gl.compileShader(s);
   if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    console.error('[DitherGradient] shader error:', gl.getShaderInfoLog(s));
+    console.error('[DitherOrbs] shader error:', gl.getShaderInfoLog(s));
     gl.deleteShader(s);
     return null;
   }
@@ -193,7 +184,7 @@ function buildProgram(gl: WebGL2RenderingContext, vert: string, frag: string) {
   gl.deleteShader(vs);
   gl.deleteShader(fs);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    console.error('[DitherGradient] link error:', gl.getProgramInfoLog(p));
+    console.error('[DitherOrbs] link error:', gl.getProgramInfoLog(p));
     return null;
   }
   return p;
@@ -231,18 +222,16 @@ function parseColor(color: string): [number, number, number] {
 interface Props {
   style?: React.CSSProperties;
   className?: string;
-  gradA?: string;
-  gradB?: string;
+  colorA?: string;
+  colorB?: string;
+  blobSize?: number;
+  softness?: number;
   speed?: number;
-  distortion?: number;
   seed?: number;
   pattern?: 'bayer2' | 'bayer4' | 'bayer8' | 'clusteredDot' | 'blueNoise' | 'whiteNoise';
   pixelSize?: number;
   threshold?: number;
   spread?: number;
-  colorMode?: 'gradient' | 'custom';
-  colorA?: string;
-  colorB?: string;
   opacity?: number;
 }
 
@@ -251,34 +240,30 @@ const PATTERN_INT = {
   clusteredDot: 3, blueNoise: 4, whiteNoise: 5,
 } as const;
 
-export default function DitherGradient({
+export default function DitherOrbs({
   style = {},
   className,
-  gradA = '#0a0015',
-  gradB = '#6b17e6',
-  speed = 1,
-  distortion = 0.5,
+  colorA = '#FBF9F6',
+  colorB = '#c4213f',
+  blobSize = 0.55,
+  softness = 0.85,
+  speed = 0.5,
   seed = 0,
   pattern = 'bayer8',
   pixelSize = 3,
-  threshold = 0,
-  spread = 0.42,
-  colorMode = 'gradient',
-  colorA = '#000000',
-  colorB = '#ffffff',
+  threshold = 0.1,
+  spread = 1,
   opacity = 1,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const propsRef = useRef({
-    gradA, gradB, speed, distortion, seed,
-    pattern, pixelSize, threshold, spread,
-    colorMode, colorA, colorB, opacity,
+    colorA, colorB, blobSize, softness, speed, seed,
+    pattern, pixelSize, threshold, spread, opacity,
   });
   propsRef.current = {
-    gradA, gradB, speed, distortion, seed,
-    pattern, pixelSize, threshold, spread,
-    colorMode, colorA, colorB, opacity,
+    colorA, colorB, blobSize, softness, speed, seed,
+    pattern, pixelSize, threshold, spread, opacity,
   };
 
   useEffect(() => {
@@ -287,7 +272,7 @@ export default function DitherGradient({
 
     const glNullable = canvas.getContext('webgl2', { alpha: true });
     if (!glNullable) {
-      console.warn('[DitherGradient] WebGL2 not available');
+      console.warn('[DitherOrbs] WebGL2 not available');
       return;
     }
     const gl: WebGL2RenderingContext = glNullable;
@@ -311,21 +296,19 @@ export default function DitherGradient({
 
     // ── Uniform locations ─────────────────────────────────────────────────────
     const u = {
-      res:        gl.getUniformLocation(prog, 'u_res'),
-      time:       gl.getUniformLocation(prog, 'u_time'),
-      gradA:      gl.getUniformLocation(prog, 'u_gradA'),
-      gradB:      gl.getUniformLocation(prog, 'u_gradB'),
-      speed:      gl.getUniformLocation(prog, 'u_speed'),
-      distortion: gl.getUniformLocation(prog, 'u_distortion'),
-      seed:       gl.getUniformLocation(prog, 'u_seed'),
-      pattern:    gl.getUniformLocation(prog, 'u_pattern'),
-      pixelSize:  gl.getUniformLocation(prog, 'u_pixelSize'),
-      threshold:  gl.getUniformLocation(prog, 'u_threshold'),
-      spread:     gl.getUniformLocation(prog, 'u_spread'),
-      colorMode:  gl.getUniformLocation(prog, 'u_colorMode'),
-      colorA:     gl.getUniformLocation(prog, 'u_colorA'),
-      colorB:     gl.getUniformLocation(prog, 'u_colorB'),
-      opacity:    gl.getUniformLocation(prog, 'u_opacity'),
+      res:       gl.getUniformLocation(prog, 'u_res'),
+      time:      gl.getUniformLocation(prog, 'u_time'),
+      speed:     gl.getUniformLocation(prog, 'u_speed'),
+      seed:      gl.getUniformLocation(prog, 'u_seed'),
+      blobSize:  gl.getUniformLocation(prog, 'u_blobSize'),
+      softness:  gl.getUniformLocation(prog, 'u_softness'),
+      pattern:   gl.getUniformLocation(prog, 'u_pattern'),
+      pixelSize: gl.getUniformLocation(prog, 'u_pixelSize'),
+      threshold: gl.getUniformLocation(prog, 'u_threshold'),
+      spread:    gl.getUniformLocation(prog, 'u_spread'),
+      colorA:    gl.getUniformLocation(prog, 'u_colorA'),
+      colorB:    gl.getUniformLocation(prog, 'u_colorB'),
+      opacity:   gl.getUniformLocation(prog, 'u_opacity'),
     };
 
     // ── ResizeObserver ────────────────────────────────────────────────────────
@@ -349,10 +332,9 @@ export default function DitherGradient({
 
     const render = () => {
       const {
-        gradA: gA, gradB: gB,
-        speed: spd, distortion: dist, seed: sd,
-        pattern: pat, pixelSize: ps, threshold: thr, spread: spr,
-        colorMode: cm, colorA: cA, colorB: cB, opacity: op,
+        colorA: cA, colorB: cB,
+        blobSize: bs, softness: sf, speed: spd, seed: sd,
+        pattern: pat, pixelSize: ps, threshold: thr, spread: spr, opacity: op,
       } = propsRef.current;
 
       const elapsed = (performance.now() - startTime) / 1000;
@@ -364,27 +346,21 @@ export default function DitherGradient({
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(prog);
 
-      gl.uniform2f(u.res,  cw, ch);
-      gl.uniform1f(u.time, elapsed);
+      gl.uniform2f(u.res,       cw, ch);
+      gl.uniform1f(u.time,      elapsed);
+      gl.uniform1f(u.speed,     spd);
+      gl.uniform1f(u.seed,      sd);
+      gl.uniform1f(u.blobSize,  bs);
+      gl.uniform1f(u.softness,  sf);
+      gl.uniform1i(u.pattern,   PATTERN_INT[pat] ?? 2);
+      gl.uniform1f(u.pixelSize, Math.max(1, ps));
+      gl.uniform1f(u.threshold, thr);
+      gl.uniform1f(u.spread,    spr);
 
-      const [rA, gA_, bA] = parseColor(gA);
-      const [rB, gB_, bB] = parseColor(gB);
-      gl.uniform3f(u.gradA, rA, gA_, bA);
-      gl.uniform3f(u.gradB, rB, gB_, bB);
-
-      gl.uniform1f(u.speed,      spd);
-      gl.uniform1f(u.distortion, dist);
-      gl.uniform1f(u.seed,       sd);
-      gl.uniform1i(u.pattern,    PATTERN_INT[pat] ?? 2);
-      gl.uniform1f(u.pixelSize,  Math.max(1, ps));
-      gl.uniform1f(u.threshold,  thr);
-      gl.uniform1f(u.spread,     spr);
-      gl.uniform1i(u.colorMode,  cm === 'gradient' ? 0 : 1);
-
-      const [r0, g0, b0] = parseColor(cA);
-      const [r1, g1, b1] = parseColor(cB);
-      gl.uniform3f(u.colorA, r0, g0, b0);
-      gl.uniform3f(u.colorB, r1, g1, b1);
+      const [rA, gA, bA] = parseColor(cA);
+      const [rB, gB, bB] = parseColor(cB);
+      gl.uniform3f(u.colorA, rA, gA, bA);
+      gl.uniform3f(u.colorB, rB, gB, bB);
       gl.uniform1f(u.opacity, op);
 
       gl.bindVertexArray(vao);
@@ -421,33 +397,42 @@ export default function DitherGradient({
 
 // ─── Framer property controls ─────────────────────────────────────────────────
 
-addPropertyControls(DitherGradient, {
-  gradA: {
+addPropertyControls(DitherOrbs, {
+  colorA: {
     type: ControlType.Color,
-    title: 'Color A',
-    defaultValue: '#0a0015',
+    title: 'Background',
+    defaultValue: '#FBF9F6',
   },
-  gradB: {
+  colorB: {
     type: ControlType.Color,
-    title: 'Color B',
-    defaultValue: '#6b17e6',
+    title: 'Dither Color',
+    defaultValue: '#c4213f',
+  },
+  blobSize: {
+    type: ControlType.Number,
+    title: 'Orb Size',
+    defaultValue: 0.55,
+    min: 0.05,
+    max: 1.5,
+    step: 0.01,
+    displayStepper: true,
+  },
+  softness: {
+    type: ControlType.Number,
+    title: 'Softness',
+    defaultValue: 0.85,
+    min: 0,
+    max: 0.99,
+    step: 0.01,
+    displayStepper: true,
   },
   speed: {
     type: ControlType.Number,
     title: 'Speed',
-    defaultValue: 1,
-    min: 0,
-    max: 10,
-    step: 0.1,
-    displayStepper: true,
-  },
-  distortion: {
-    type: ControlType.Number,
-    title: 'Distortion',
     defaultValue: 0.5,
     min: 0,
-    max: 2,
-    step: 0.01,
+    max: 5,
+    step: 0.05,
     displayStepper: true,
   },
   seed: {
@@ -478,7 +463,7 @@ addPropertyControls(DitherGradient, {
   threshold: {
     type: ControlType.Number,
     title: 'Threshold',
-    defaultValue: 0,
+    defaultValue: 0.1,
     min: -1,
     max: 1,
     step: 0.01,
@@ -487,30 +472,11 @@ addPropertyControls(DitherGradient, {
   spread: {
     type: ControlType.Number,
     title: 'Spread',
-    defaultValue: 0.42,
+    defaultValue: 1,
     min: 0,
     max: 2,
     step: 0.01,
     displayStepper: true,
-  },
-  colorMode: {
-    type: ControlType.Enum,
-    title: 'Color Mode',
-    defaultValue: 'gradient',
-    options: ['gradient', 'custom'],
-    optionTitles: ['Gradient', 'Custom'],
-  },
-  colorA: {
-    type: ControlType.Color,
-    title: 'Color A (out)',
-    defaultValue: '#000000',
-    hidden: (props: Props) => props.colorMode !== 'custom',
-  },
-  colorB: {
-    type: ControlType.Color,
-    title: 'Color B (out)',
-    defaultValue: '#ffffff',
-    hidden: (props: Props) => props.colorMode !== 'custom',
   },
   opacity: {
     type: ControlType.Number,
