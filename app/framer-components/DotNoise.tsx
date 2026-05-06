@@ -31,6 +31,7 @@ uniform float u_cellSize;    // grid spacing in canvas pixels
 uniform float u_dotSize;     // dot radius as fraction of cell half-size (0–1)
 uniform float u_noiseScale;  // spatial frequency of the noise field
 uniform float u_threshold;   // shifts which noise values produce dots (-1 to 1)
+uniform float u_contrast;    // sharpens cluster edges (1=smooth, high=hard boundary)
 uniform int   u_shape;       // 0=circle 1=square 2=triangle
 uniform vec3  u_bgColor;
 uniform vec3  u_dotColor;
@@ -68,7 +69,8 @@ void main() {
     float noiseVal = noise(uv * u_noiseScale + vec2(t * 0.13, t * 0.09));
 
     // ── Does this cell get a dot? ─────────────────────────────────────────────
-    float cellActive = step(0.5 - u_threshold, noiseVal);
+    float n = clamp((noiseVal - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+    float cellActive = step(0.5 - u_threshold, n);
 
     // ── Shape SDF (negative = inside, positive = outside) ────────────────────
     vec2  p      = fract(gl_FragCoord.xy / u_cellSize) - 0.5;
@@ -171,6 +173,7 @@ interface Props {
   cellSize?: number;
   dotSize?: number;
   noiseScale?: number;
+  contrast?: number;
   speed?: number;
   seed?: number;
   threshold?: number;
@@ -188,6 +191,7 @@ export default function DotNoise({
   cellSize = 18,
   dotSize = 0.38,
   noiseScale = 3,
+  contrast = 1,
   speed = 0.3,
   seed = 0,
   threshold = 0,
@@ -197,10 +201,10 @@ export default function DotNoise({
   const dprRef    = useRef(1);
 
   const propsRef = useRef({
-    bgColor, dotColor, shape, cellSize, dotSize, noiseScale, speed, seed, threshold, opacity,
+    bgColor, dotColor, shape, cellSize, dotSize, noiseScale, contrast, speed, seed, threshold, opacity,
   });
   propsRef.current = {
-    bgColor, dotColor, shape, cellSize, dotSize, noiseScale, speed, seed, threshold, opacity,
+    bgColor, dotColor, shape, cellSize, dotSize, noiseScale, contrast, speed, seed, threshold, opacity,
   };
 
   useEffect(() => {
@@ -241,6 +245,7 @@ export default function DotNoise({
       cellSize:   gl.getUniformLocation(prog, 'u_cellSize'),
       dotSize:    gl.getUniformLocation(prog, 'u_dotSize'),
       noiseScale: gl.getUniformLocation(prog, 'u_noiseScale'),
+      contrast:   gl.getUniformLocation(prog, 'u_contrast'),
       threshold:  gl.getUniformLocation(prog, 'u_threshold'),
       bgColor:    gl.getUniformLocation(prog, 'u_bgColor'),
       dotColor:   gl.getUniformLocation(prog, 'u_dotColor'),
@@ -270,7 +275,7 @@ export default function DotNoise({
     const render = () => {
       const {
         bgColor: bg, dotColor: dc, shape: sh,
-        cellSize: cs, dotSize: ds, noiseScale: ns,
+        cellSize: cs, dotSize: ds, noiseScale: ns, contrast: ct,
         speed: spd, seed: sd, threshold: thr, opacity: op,
       } = propsRef.current;
 
@@ -293,6 +298,7 @@ export default function DotNoise({
       gl.uniform1f(u.cellSize,   Math.max(1, cs) * dpr);
       gl.uniform1f(u.dotSize,    ds);
       gl.uniform1f(u.noiseScale, ns);
+      gl.uniform1f(u.contrast,   ct);
       gl.uniform1f(u.threshold,  thr);
 
       const [rBg, gBg, bBg] = parseColor(bg);
@@ -377,6 +383,15 @@ addPropertyControls(DotNoise, {
     defaultValue: 3,
     min: 0.5,
     max: 10,
+    step: 0.1,
+    displayStepper: true,
+  },
+  contrast: {
+    type: ControlType.Number,
+    title: 'Cluster Edge',
+    defaultValue: 1,
+    min: 0.1,
+    max: 8,
     step: 0.1,
     displayStepper: true,
   },
