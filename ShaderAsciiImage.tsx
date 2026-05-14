@@ -293,11 +293,12 @@ export default function ShaderAsciiImage({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext('webgl2', { alpha: true });
-    if (!gl) {
+    const glNullable = canvas.getContext('webgl2', { alpha: true });
+    if (!glNullable) {
       console.warn('[ShaderAsciiImage] WebGL2 not available');
       return;
     }
+    const gl: WebGL2RenderingContext = glNullable;
 
     const prog = buildProgram(gl, VERT, FRAG);
     if (!prog) return;
@@ -642,6 +643,7 @@ export default function ShaderAsciiImage({
       gl.deleteTexture(atlasTex);
       gl.deleteTexture(dispTex);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

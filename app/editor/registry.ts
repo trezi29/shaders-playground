@@ -655,6 +655,7 @@ export const REGISTRY: Record<string, ComponentDef> = {
 
 // ─── Component Map ────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
   solidColor: SolidColor, imageTexture: ImageTexture, videoTexture: VideoTexture,
   webcamTexture: WebcamTexture, aurora: Aurora, beam: Beam, blob: Blob,

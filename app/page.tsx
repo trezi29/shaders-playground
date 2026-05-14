@@ -113,6 +113,7 @@ import {
   Liquify,
   Shatter,
 } from 'shaders/react';
+import type { BlendMode } from 'shaders/core';
 import { useDialKit } from 'dialkit';
 
 const BLEND_MODES = [
@@ -1280,7 +1281,6 @@ export default function Home() {
         enabled: false,
         frequency: [100, 1, 300, 1],
         angle: [45, 0, 360, 1],
-        smoothness: [0.1, 0, 1, 0.01],
       },
       lensFlare: {
         enabled: false,
@@ -1567,7 +1567,7 @@ export default function Home() {
         speed={t.flowingGradient.speed}
         distortion={t.flowingGradient.distortion}
         seed={t.flowingGradient.seed}
-        blendMode={t.flowingGradient.blendMode as any}
+        blendMode={t.flowingGradient.blendMode as BlendMode}
       />
       <Godrays
         visible={t.godrays.enabled}
@@ -1671,7 +1671,7 @@ export default function Home() {
         visible={t.simplexNoise.enabled}
         colorA={t.simplexNoise.colorA}
         colorB={t.simplexNoise.colorB}
-        blendMode={t.simplexNoise.blendMode as any}
+        blendMode={t.simplexNoise.blendMode as BlendMode}
         scale={t.simplexNoise.scale}
         balance={t.simplexNoise.balance}
         contrast={t.simplexNoise.contrast}
@@ -2029,7 +2029,7 @@ export default function Home() {
         detail={d.flowField.detail}
         speed={d.flowField.speed}
         evolutionSpeed={d.flowField.evolutionSpeed}
-        edges={d.flowField.edges as any}
+        edges={d.flowField.edges as string}
       />
       <Form3D
         visible={d.form3D.enabled}
@@ -2052,13 +2052,13 @@ export default function Home() {
         center={{ x: d.kaleidoscope.center.x, y: d.kaleidoscope.center.y }}
         segments={d.kaleidoscope.segments}
         angle={d.kaleidoscope.angle}
-        edges={d.kaleidoscope.edges as any}
+        edges={d.kaleidoscope.edges as string}
       />
       <Mirror
         visible={d.mirror.enabled}
         center={{ x: d.mirror.center.x, y: d.mirror.center.y }}
         angle={d.mirror.angle}
-        edges={d.mirror.edges as any}
+        edges={d.mirror.edges as string}
       />
       <Perspective
         visible={d.perspective.enabled}
@@ -2166,7 +2166,7 @@ export default function Home() {
         color={a.tint.color}
         amount={a.tint.amount}
         preserveLuminosity={a.tint.preserveLuminosity}
-        blendMode={a.tint.blendMode as any}
+        blendMode={a.tint.blendMode as BlendMode}
       />
       <Tritone
         visible={a.tritone.enabled}
@@ -2251,8 +2251,8 @@ export default function Home() {
         softness={st.contourLines.softness}
         gamma={st.contourLines.gamma}
         invert={st.contourLines.invert}
-        source={st.contourLines.source as any}
-        colorMode={st.contourLines.colorMode as any}
+        source={st.contourLines.source as string}
+        colorMode={st.contourLines.colorMode as string}
         lineColor={st.contourLines.lineColor}
         backgroundColor={st.contourLines.backgroundColor}
       />
@@ -2310,7 +2310,6 @@ export default function Home() {
         visible={st.halftone.enabled}
         frequency={st.halftone.frequency}
         angle={st.halftone.angle}
-        smoothness={st.halftone.smoothness}
       />
       <LensFlare
         visible={st.lensFlare.enabled}

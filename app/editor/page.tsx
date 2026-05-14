@@ -39,6 +39,12 @@ export default function EditorPage() {
     setSelectedId((prev) => (prev === id ? null : prev));
   }
 
+  function updateMask(id: string, maskSource: string | undefined, maskType: Layer['maskType']) {
+    setLayers((prev) =>
+      prev.map((l) => l.id === id ? { ...l, maskSource, maskType } : l),
+    );
+  }
+
   function reorderLayer(id: string, dir: -1 | 1) {
     setLayers((prev) => {
       const idx = prev.findIndex((l) => l.id === id);
@@ -83,7 +89,7 @@ export default function EditorPage() {
           const Comp = COMPONENT_MAP[layer.type];
           if (!Comp) return null;
           return (
-            <Comp key={layer.id} visible={layer.visible} {...layer.props} />
+            <Comp key={layer.id} id={layer.id} visible={layer.visible} {...layer.props} maskSource={layer.maskSource} maskType={layer.maskType} />
           );
         })}
       </Shader>
@@ -104,6 +110,7 @@ export default function EditorPage() {
         onSaveProject={handleSaveProject}
         onLoadProject={handleLoadProject}
         onDeleteProject={handleDeleteProject}
+        onUpdateMask={updateMask}
       />
     </>
   );
